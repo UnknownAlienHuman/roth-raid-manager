@@ -19,4 +19,4 @@ This is a compact legacy-derived addon with no prior development tracker. The re
 
 ## License
 
-No license declaration was inferred from the current tree.
+Licensed under the [MIT License](LICENSE).
