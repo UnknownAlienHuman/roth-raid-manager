@@ -1,0 +1,10 @@
+## Interface: 120000
+## X-Interface-Alt: 120001
+## Title: RothRaidManager
+## Notes: Simple raid utility panel (Galaxy 2016) with Midnight-safe fixes
+## Author: Galaxy (Roth UI) / modularized
+## Version: 0.3.0
+## SavedVariables: RothRaidManagerDB
+
+Manager.xml
+options.lua
