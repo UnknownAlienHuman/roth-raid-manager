@@ -1,27 +1,95 @@
 # RothRaidManager agent guide
 
-## Start here
+## Contract
 
-Read [`RothRaidManager.toc`](RothRaidManager.toc): it loads `Manager.xml` (which includes `core.lua`) and then `options.lua`. `core.lua` creates the global frame named from the addon var (`RothRaidManager`), while `options.lua` finds that frame via `_G["RothRaidManager"]`.
+Target Retail 12.1 / Interface `120100`. Preserve the compact raid utility panel, all secure world-marker/pull macros, ordinary raid/group utilities, state-driver visibility, Settings, movement, and persistence.
 
-## Runtime and state flow
+Read:
 
-At file load, `core.lua` merges defaults into `RothRaidManagerDB`, creates the manager panel, applies the persisted point/scale/visibility, creates world-marker/role/ready-check/party-raid/pull/stopwatch buttons, and registers the secure state-frame toggle. The manager listens to `PLAYER_LOGIN`; the current handler only reports Blizzard compact-frame state because `needReload` is hard-coded false in this tree. Do not document this version as actively disabling Blizzard raid-frame addons.
+1. `RothRaidManager.toc`
+2. `core.lua`
+3. `options.lua`
+4. `ARCHITECTURE.md`
+5. `tests/test_protected_actions.lua`
+6. `tests/test_combat_initialization.lua`
+7. `Docs/TODO.md`
 
-The panel's buttons include `SecureActionButtonTemplate`; marker/pull buttons receive macro attributes (`/wm`, `/cwm`, `/pull`) at creation. `RegisterStateDriver(manager, "visibility", "[group:party][group:raid] show; hide")` controls group visibility. Slash `/rrm lock|unlock|toggle|reset` updates DB and frame state. `options.lua` registers a Canvas Settings category and delegates checkbox/slider/button actions to the slash handler/core frame.
+## Secure initialization
 
-## State, dependencies, risks
+Never create `SecureHandlerStateTemplate` / `SecureActionButtonTemplate` frames or assign attributes during combat. `PLAYER_LOGIN` must defer the whole secure graph when loaded in combat. `PLAYER_REGEN_ENABLED` performs one initialization.
 
-The single SavedVariables root is `RothRaidManagerDB`: `enabled`, `locked`, `scale`, `ctrlAltDrag`, and `pos`. There are no addon dependencies beyond Blizzard templates/APIs. The persisted position is written on drag stop; reset restores the left-edge default.
+The fixed secure attributes are:
 
-The secure panel and macro attributes are the critical protected-action boundary. Do not set secure attributes, change frame parent/anchors, or mutate state-driver inputs in combat. The slash handler currently changes `locked`, `enabled`, and points without an explicit combat gate; if adding protected operations, queue them and apply after `PLAYER_REGEN_ENABLED`. Keep marker/role/ready-check APIs as button click behavior rather than polling.
+```text
+type=macro  macrotext=/wm N
+type=macro  macrotext=/cwm N
+type=macro  macrotext=/pull 10
+```
 
-## Change routing
+Do not change them after `CreateUI`. Do not replace them with Lua calls or secure `_onclick` geometry snippets.
 
-- DB/defaults, panel/buttons, secure attributes, state driver, `/rrm`: `core.lua`.
-- Settings controls and bridge callbacks: `options.lua`.
-- XML/load order: `Manager.xml` and TOC only; update docs if the include contract changes.
+## Ordinary utilities
+
+Clear-all, role check, ready check, party/raid conversions, and stopwatch pass through `RunOutOfCombat`. The boundary:
+
+- rejects combat clicks immediately;
+- resolves the Blizzard global at click time;
+- fails closed when missing/failing;
+- never stores or replays an action after combat.
+
+A delayed raid-management command violates user intent.
+
+## Apply ownership
+
+`Apply` alone owns:
+
+- point and offsets;
+- scale;
+- expanded width/alpha;
+- mouse state;
+- visibility-driver registration.
+
+Combat-time changes set one `pendingApply`; regen applies the current DB once. Never mutate parent, points, size, scale, alpha, mouse state, driver, or secure attributes in combat.
+
+## SavedVariables
+
+Schema and validation live in `core.lua`. Allow only the nine standard anchor strings and bounded offsets. Access-check external/event/slash values before type, comparison, formatting, indexing, or persistence.
+
+## Visibility and movement
+
+Keep the canonical state driver:
+
+```text
+[group:party][group:raid] show; hide
+```
+
+Do not poll group state. Drag requires unlocked, out of combat, ALT, and optionally CTRL. Reset and expansion/collapse are blocked in combat.
+
+## Non-ownership
+
+Do not disable or claim ownership of Blizzard CUF/compact raid frames. Do not print that they were disabled. Do not inspect roster/permission state to emulate Blizzard action enforcement.
 
 ## Verification
 
-Static: verify XML/TOC references, parse `core.lua` and `options.lua`, and run `git diff --check`. In game, test `/rrm lock|unlock|toggle|reset`, ALT/CTRL+ALT dragging, party/raid visibility, each marker/cancel/role/ready-check/pull/stopwatch button, Settings writes, reload persistence, and combat lockdown. Confirm no protected-action errors and explicitly check whether Blizzard raid frames are merely reported or actually disabled. Current audit is not a live client run.
+```text
+texlua --luaconly core.lua options.lua tests/test_protected_actions.lua tests/test_combat_initialization.lua
+texlua tests/test_protected_actions.lua
+texlua tests/test_combat_initialization.lua
+```
+
+Static policy must exclude:
+
+```text
+SecureHandlerClickTemplate
+_onclick
+DisableAddOn
+InterfaceOptionsCheckButtonTemplate
+OptionsSliderTemplate
+InterfaceOptions_AddCategory
+C_Timer.NewTicker
+COMBAT_LOG_EVENT_UNFILTERED
+```
+
+Then complete `Docs/TODO.md` on the exact client build. Mock success does not prove live permissions, taint, secure macro execution, or visuals.
+
+Do not add GitHub Actions or other CI unless the repository owner explicitly changes that policy.
